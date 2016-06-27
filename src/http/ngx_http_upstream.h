@@ -190,6 +190,7 @@ typedef struct {
 
     ngx_uint_t                       cache_min_uses;
     ngx_uint_t                       cache_use_stale;
+    ngx_flag_t                       cache_use_stale_extend_expire;
     ngx_uint_t                       cache_methods;
 
     ngx_flag_t                       cache_lock;

@@ -2266,6 +2266,22 @@ ngx_http_upstream_test_next(ngx_http_request_t *r, ngx_http_upstream_t *u)
             if (rc == NGX_OK) {
                 u->cache_status = NGX_HTTP_CACHE_STALE;
                 rc = ngx_http_upstream_cache_send(r, u);
+
+                // Start of "Add cache_use_stale_extend_expire" by hikaru4
+                if (u->conf->cache_use_stale_extend_expire) {
+                    time_t  now, valid;
+
+                    valid = ngx_http_file_cache_valid(u->conf->cache_valid,
+                                                      u->headers_in.status_n);
+
+                    if (valid) {
+                        now = ngx_time();
+                        r->cache->valid_sec = now + valid;
+                        r->cache->date = now;
+                        ngx_http_file_cache_update_header(r);
+                    }
+                }
+                // End of "Add cache_use_stale_extend_expire" by hikaru4
             }
 
             ngx_http_upstream_finalize_request(r, u, rc);
