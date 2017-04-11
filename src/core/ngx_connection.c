@@ -13,7 +13,7 @@
 ngx_os_io_t  ngx_io;
 
 
-static void ngx_drain_connections(void);
+static void ngx_drain_connections(ngx_cycle_t *cycle);
 
 
 ngx_listening_t *
@@ -1046,7 +1046,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     c = ngx_cycle->free_connections;
 
     if (c == NULL) {
-        ngx_drain_connections();
+        ngx_drain_connections((ngx_cycle_t *) ngx_cycle);
         c = ngx_cycle->free_connections;
     }
 
@@ -1191,10 +1191,7 @@ ngx_close_connection(ngx_connection_t *c)
             level = NGX_LOG_CRIT;
         }
 
-        /* we use ngx_cycle->log because c->log was in c->pool */
-
-        ngx_log_error(level, ngx_cycle->log, err,
-                      ngx_close_socket_n " %d failed", fd);
+        ngx_log_error(level, c->log, err, ngx_close_socket_n " %d failed", fd);
     }
 }
 
@@ -1207,6 +1204,7 @@ ngx_reusable_connection(ngx_connection_t *c, ngx_uint_t reusable)
 
     if (c->reusable) {
         ngx_queue_remove(&c->queue);
+        ngx_cycle->reusable_connections_n--;
 
 #if (NGX_STAT_STUB)
         (void) ngx_atomic_fetch_add(ngx_stat_waiting, -1);
@@ -1220,6 +1218,7 @@ ngx_reusable_connection(ngx_connection_t *c, ngx_uint_t reusable)
 
         ngx_queue_insert_head(
             (ngx_queue_t *) &ngx_cycle->reusable_connections_queue, &c->queue);
+        ngx_cycle->reusable_connections_n++;
 
 #if (NGX_STAT_STUB)
         (void) ngx_atomic_fetch_add(ngx_stat_waiting, 1);
@@ -1229,18 +1228,20 @@ ngx_reusable_connection(ngx_connection_t *c, ngx_uint_t reusable)
 
 
 static void
-ngx_drain_connections(void)
+ngx_drain_connections(ngx_cycle_t *cycle)
 {
-    ngx_int_t          i;
+    ngx_uint_t         i, n;
     ngx_queue_t       *q;
     ngx_connection_t  *c;
 
-    for (i = 0; i < 32; i++) {
-        if (ngx_queue_empty(&ngx_cycle->reusable_connections_queue)) {
+    n = ngx_max(ngx_min(32, cycle->reusable_connections_n / 8), 1);
+
+    for (i = 0; i < n; i++) {
+        if (ngx_queue_empty(&cycle->reusable_connections_queue)) {
             break;
         }
 
-        q = ngx_queue_last(&ngx_cycle->reusable_connections_queue);
+        q = ngx_queue_last(&cycle->reusable_connections_queue);
         c = ngx_queue_data(q, ngx_connection_t, queue);
 
         ngx_log_debug0(NGX_LOG_DEBUG_CORE, c->log, 0,
